@@ -1,0 +1,645 @@
+Design:
+
+
+
+Implementation:
+
+######################################### jenkins credentials history:
+
+Alle credentials sind hardcoded in .yml files drinnen.
+Das führt zu sicherheitslücken, weil was wenn was leaked. 
+Viele attack vectors: gitlab/sourcecode/Jenkins/server kann leaken.
+Außerdem sind credentials überall verteilt. man muss die ganze application neu builden, wenn sich credentials updaten.
+Daher umstieg auf externes management. -> vorteil, dass dann keine credentials mehr im repo/code sind und werte können über ui editiert werden.
+Gedanke: spring environment variable string interpolation verwenden.
+schlussendlich nicht nur credentials, sondern auch variablen, die sich leicht ändern können, wie zum beispiel database url.
+
+
+Prozess ist wie folgt:
+
+spring -> jenkins -> build server -> docker environment
+
+
+Im selben zug wurde dann direkt noch auf spring boot 2.7.11 aktualisiert und folgende versionen aktualisiert. als vorbereitung auf spring boot 3
+Tabelle draus machen:
+% Anmerkung Upgrade auf Spring Boot 2.7.11
+% gradle 6.6.1 -> 7.5
+% Kotlin: 1.4.31 -> 1.5.32
+% kapt: 1.4.10 -> 1.5.32
+% gradle spring plugin: 1.4.31 -> 1.6.21
+% gradle jpa plugin: 1.4.10 -> 1.6.21
+% Spring Boot 2.3.2.RELEASE -> 2.7.11
+% Springfox: 2.9.2 -> 3.0.0
+% Mapstruct: 1.3.1.Final -> 1.5.5.Final
+% Liquibase: 4.7.1 -> 4.21.1
+% FirebaseAdmin: 6.16.0 -> 9.1.1
+% Apns: 1.0.3 -> 1.0.3
+% Pushy: 0.14.1 -> 0.15.2
+% jwt: 3.3.0 -> 4.4.0
+% logger: 1.8.3 -> 3.0.5
+% jacksoncsv: 2.10.0 -> 2.15.0
+% thymeleaf: 3.0.11.Release -> 3.1.1.RELEASE
+% okhttp: 2.7.5 -> 4.10.0
+% retrofit: 2.9.0 -> 2.9.0
+
+das war nicht wirklich ein problem.
+
+springfox 3.0 war ein kleiner aufwand, da sich die url und Konfiguration leichter verändert haben. Insgesamt aber generell nur kleinere rewrites. 
+
+fragment von mysql library verändert von "mysql:mysql-connector-java" zu "com.mysql:mysql-connector-j". 
+gleichzeitig neue packages von com.mysql.jdbc.Driver zu com.mysql.cj.jdbc.Driver.
+https://blogs.oracle.com/mysql/post/mysql-connectorj-has-new-maven-coordinates
+grund tldr: single word group name bei maven eigentlich nicht mehr erlaubt. haben aus legacy reason den single mysql namen behalten dürfen.
+aber weils letztes jahr convenient war, sinds auf com.mysql umgestiegen und haben namen an neue conventions angepasst.
+
+Parallel dazu hat Kollege einen Pull Request gemerged, der das Projekt mit docker-compose containerisiert.
+-> 3 container. 1 database, 1 liquibase, 1 spring boot api.
+-> als erstes wird db gestartet, wenn container healthy lauft, dann wird liquibase gestartet. wenn der container erfolgreich completed, dann wird spring boot api gestartet.
+
+Intellij erleichtert testen von env var verhalten unter windows.
+In build konfiguration kann im Format `VAR1=KEY1; VAR2=KEY2` env variablen injected werden. dadurch müssen keine env variablen im actual system definiert werden.
+
+######################### 1. In spring yaml gar kane properties definieren. (aber placeholder an den stellen, dass man sich leichter tut mitn finden)
+
+``` unter: spring.mail.username...
+# username: will be set using env variables - spring_mail_username
+# password: will be set using env variables - spring_mail_password
+# sender: will be set using env variables - spring_mail_sender
+```
+
+env variablen brauchen bestimmtes format: https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.external-config
+
+. wird durch _ ersetzt. bindestriche entfernt. alle kleinbuchstaben werden zu großbuchstaben.
+
+######################### 2. Jenkins setup.
+
+Jobs werden für 1 repository definiert (in dem fall customerpotal).
+Diese Jobs haben Kontext im Jenkins. Dazu gehören auch Config Files, die über Jenkins gemanaged werden können.
+in config files liegen .env dateien drinnen.
+Format davon: ```KEY1=VALUE1``` pro zeile
+um auf config files, die in Jenkins hinterlegt sind, zugreifen zu können, benötigt es die Funktion `configFileProder`. fileid is der name z.b. backend.env, variable beschreibt den Variablennamen, unter welchem der dateiname verfügbar is.
+```
+configFileProvider([
+    configFile(fileId: params_env_file, variable: 'PARAMS_ENV'),
+    configFile(fileId: general_env_file, variable: 'GENERAL_ENV')
+])
+```
+
+######################### 3. Jenkins pipeline file:
+
+Parametrized build zum controllen für welche instanz gebuildet wird. -> gewählte env file hängt von choice beim build ab. env file müssen same name wie choice haben.
+```
+parameters {
+    //choice(name: 'environment', choices: ['backend', 'cp-abfallooe', 'cp-aha', 'cp-familypass', 'cp-linzag', 'cp-voestma', 'cp-wacker-usedmachines'], description: 'Please select which environment should be built.')
+    choice(name: 'environment', choices: ['backend', 'cp-abfallooe'], description: 'Please select which environment should be deployed.')
+}
+```
+
+auf basis der choice wird dann der richtige folder path gebuildet. (z.b. /var/local/customerportal/backend und /var/local/customerportal/cp-aha)
+
+anschließend müssen die dateien vom jenkins build server auf den ausführenden server übertragen werden.
+am build server werden die jar files generiert.
+als erstes kontext schaffen durch `configFileProvider`. damit hat man dann config files (env files).
+danach mit ansible (infrastructure tool) dann die env files vom build directory auf den ausführenden server kopieren.
+konnte von deploySpringToDocker() abgeschaut werden. funktion hat bereits existiert und konnte umgewandelt übernommen werden.
+wichtig bei jenkinsfile: basieren auf groovy skript syntax.
+daher ist string interpolation möglich, aber gibt details zu beachten.
+so erlauben nur doppelte anführungszeichen tatsächlich interpolation. einzelne anführungszeichen nicht.
+variablen werden im String mit ${} interpoliert.  
+```
+stage('Stage Server') {
+    ...
+    steps {
+        copyEnvFiles(docker_path_environment, server_stage)
+        deploySpringToDocker(gradlePackageCommand, artifactName, extension, projectname, server_stage, docker_path_environment)
+    }
+    ...
+}
+
+def copyEnvFiles(String basePath, String hostname) {
+    configFileProvider([
+        configFile(fileId: "${params.environment}.env", variable: 'PARAMS_ENV'),
+        configFile(fileId: "general.env", variable: 'GENERAL_ENV')
+    ]) {
+        copyEnvFile(PARAMS_ENV, "${basePath}/${params_env_file}", hostname)
+        copyEnvFile(GENERAL_ENV, "${basePath}/${general_env_file}", hostname)
+    }
+}
+
+def copyEnvFile(String from, String to, String hostname) {
+    sh "ansible -m copy -a 'src=${from} dest=${to} owner=root group=root' '${hostname}' --private-key=/var/lib/jenkins/.ssh/id_rsa -u root"
+}
+```
+
+######################### 4. von Docker Server in Docker
+
+last but not least müssen die environment variablen vom docker server in den docker container rein exported werden.
+export $(grep -h -v '^#' *.env | xargs) lest alle .env dateien im folder zeilenweise ein. xargs gibt dann den output an export weiter. export definiert pro zeile dann env variablen
+ENTRYPOINT wird im container ausgeführt, dadurch dann richtiger kontext. env variablen sind nun verfügbar.
+```
+FROM amazoncorretto:17-alpine3.17
+
+HEALTHCHECK --interval=5s --timeout=5s --retries=3 CMD wget http://localhost:8080/api/v1/system/health?secure=backendMogree123! -q -O - > /dev/null 2>&1
+
+WORKDIR /opt/
+COPY customerportal-latest.jar app.jar
+COPY *.env ./
+COPY config ./config/
+
+ENTRYPOINT export $(grep -h -v '^#' *.env | xargs) && \
+           java -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE} ${ADD_JAVA_OPTS} -jar app.jar
+
+EXPOSE 8080
+```
+##################################################################################################################################################
+
+Erster Versuch, der nicht funktioniert:
+
+von host auf docker container kopieren -> docker container liegen auf anderem server. 
+```
+configFileProvider([configFile(fileId: '.env', variable: 'ENV_CREDENTIALS')]) {
+    sh "docker cp ${ENV_CREDENTIALS} $projectname:$docker_path/.env"
+}
+```
+
+Zweiter Versuch:
+
+Dabei geht es um das injezieren von umgebungsvariable in die Konfiguration.
+Erster gedanke war mit interpolationssyntax von spring arbeiten.
+yaml files erlauben groovy template interpolation mit ${}, was aber hier nicht gewünscht ist, da dabei nur build time variablen und kein env variablen verfügbar sind.
+stattdessen gehört ${} in quotationmarks geputted und mit \ escaped -> ${}, da kotlin ${} auch verwendet zum interpolieren. 
+war zum damaligen zeit unkalr, dass quotationmarks hier verpflichtend sind und hat daher nicht funktioniert -> wobei honestly ned sure, am besten nochmal nachschauen.
+
+So weit der plan, hat aber nicht zum gewünschten ergebnis geführt, da variablen nicht übernommen wurden.
+Referenz drauf: https://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/#features.external-config.files.property-placeholders
+Dann überleitung auf die actual lösung.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Spring boot migration section:
+
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+
+spring boot upgrade:
+
+Original wurde 'customerportal' 2020 entwickelt, seither aber nicht am aktuellsten Stand gehalten, mit der Folge, dass extrem gefährliche Sicherheitslücken, wie log4shell möglich waren. Dementsprechend bestand meine erste Aufgabe darin, Spring Boot von Version 2.3.2 auf 3.0.6 zu bringen. Dabei stieß ich auch schon auf erste Hürden. Da die Api mapstruct verwendet und daher kapt (Annotationsprozessor für Kotlin) benötigt, kapt jedoch nur bis Java 15 unterstützt wird (da kapt bald deprecated und durch ksp ersetzt werden soll), Spring Boot jedoch mindestens Java 17 benötigt, war der Umstieg von Spring Boot 2 -> 3 erstmal nicht möglich. Daher entschied ich mich, erstmal nur auf Spring Boot 2.7.11 zu aktualisieren, da von Spring sowieso empfohlen wird, vorher auf diese Version als Zwischenschritt zu aktualisieren.
+
+mapstruct plant ksp support, aber arbeitet noch an der umsetzung
+https://github.com/mapstruct/mapstruct/issues/2522
+
+kapt problem:
+Diese Probleme hatten zwei Ursprünge: Unser interne Bibliothek mogree-codegen zum Generieren der Controller und mapstruct zum Generieren der Dtos. Nachdem ich bei mogree-codegen die Abhängigkeiten aktualisiert habe, behob ich noch einige Kleinigkeiten, die 2020 im Pfusch entstanden sind (z.B. waren noch einige Pfade hard-coded, weswegen eine Änderung des Zielpfads zu Problemen führte.) und ergänzte Teile der Dokumentation für die zukünftige Weiterentwicklung (auch wenn diese Bibliothek potenziell in zukünftigen Projekten nicht mehr eingesetzt wird).
+
+Das spannende an der Spring Boot Applikation ist die Art und Weise, mit welcher die REST-Controller generiert werden. Im ersten Schritt erzeugt der Code-Generator eine Delegate Schnittstelle anhand der Definition in einer swagger.yaml Datei. Anschließend implementiert der Entwickler Services, die von diesen Delegates erben. Services enthalten jegliche Logik, die spezifisch für diesen Anwendungsfall sind, Objekttransformationen auf Dtos zum Beispiel aber nicht. Dieser Delegate wird nun im ebenso autogenerierten Controller aufgerufen. Aufgrund der ausgezeichneten Dependency-Injection Mechanismen von Spring Boot wird im Controller dann automatisch die Service Implementierung des Delegates verwendet.
+
+In Stufen upgrade vornehmen:
+1. gradle aktualisieren
+2. alle libs aktualisieren und spring boot auf 2.7.11 und kotlin auf 1.5.32 aktualisieren.
+3. wenn des alles läuft dann version von kotlin bis auf 1.8.21 erhöhen
+4. spring boot auf 3.1 aktualisieren.
+5. migration guide von hibernate 5->6, spring security 5->6 und spring boot 2->3 durcharbeiten.
+6. auf basis von angular applikation und postman backend testen.
+
+wieso upgrade wichtig? weil spring boot auch viele weitere dependencies mitliefert. 
+https://nvd.nist.gov/vuln/detail/cve-2021-44228
+
+technicals: 
+
+version upgrades:
+-> kotlin 1.5.32 -> 18.21
+-> spring 2.7.11 -> 3.1.0
+-> spring dependency management 1.0.8 -> 1.1.0
+
+dann auf generatedCompile eingehen. (vllt auch im kontext von mogree-codegen)
+
+generatedCompile ist ein neues source set, das die generierten controller et al. enthält.
+das muss in gradle den anderen source sets hinzugefügt werden, sodass generated komponenten referenziert werden können von dort aus. das ist vor allem für param objekte sehr wichtig, da diese im code verwendet werden. und außerdem noch wegen delegate pattern.
+
+gradle sehr sehr fehleranfällig. außerdem ist die dokumentation sehr durcheinander und an vielen stellen werden unterschiedliche lösungen vorgeschlagen ohne klare übersicht, welche nun die aktuelle/bessere ist. -> schwierig vom überblick. an vielen stellen war es trial and error, dass man etwas funktionierendes zusammenbringt.
+
+```
+val generatedSourceSetName = "generated"
+var generatedApi: Configuration = configurations.create(generatedSourceSetName).apply {
+    extendsFrom(configurations.implementation.get())
+}
+
+dependencies {
+    generatedApi("com.mogree.server:mogree-spring:1.0.23")
+    generatedApi("org.springframework.boot:spring-boot-starter-data-rest")
+    generatedApi("org.springdoc:springdoc-openapi-starter-webmvc-ui:$springdocVersion")
+}
+
+sourceSets {
+    val generated = create(generatedSourceSetName) {
+        compileClasspath = generatedApi
+        runtimeClasspath = generatedApi
+    }
+    main {
+        compileClasspath += generated.output
+        runtimeClasspath += generated.output
+    }
+    test {
+        compileClasspath += generated.output
+        runtimeClasspath += generated.output
+    }
+}
+```
+
+javax.* -> jakarta.*
+
+Spring Security:
+
+vorher:
+```
+@Configuration
+@EnableGlobalMethodSecurity(prePostEnabled = true)
+@Order(1)
+class RemoteAPISecurityConfig(
+        private val authProvider: BasicAuthProvider
+) : WebSecurityConfigurerAdapter() {
+    @Throws(Exception::class)
+    override fun configure(http: HttpSecurity) {
+
+        http.csrf().disable().sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            .and()
+            .antMatcher("/remote/**")
+            .httpBasic()
+            .and()
+            .authorizeRequests().anyRequest().hasAuthority("remote")
+
+    }
+}
+```
+
+nachher:
+```
+@Configuration
+@EnableGlobalMethodSecurity(prePostEnabled = true)
+class SecurityConfig(
+    private val credentialsHelper: CredentialsHelper,
+    private val authProvider: BasicAuthProvider,
+    private val tokenService: JWTTokenService,
+    private val filterChainExceptionHandler: ExceptionHandler
+) {
+    @Bean
+    @Order(2)
+    @Throws(Exception::class)
+    fun filterCampaignTrackChain(http: HttpSecurity): SecurityFilterChain {
+        val filter = APIKeyAuthFilter("Authorization")
+        filter.setAuthenticationManager(APIKeyAuthManager(credentialsHelper))
+
+        http.csrf().disable().sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            .and()
+            .securityMatcher("/campaign/track").addFilter(filter).authorizeHttpRequests().requestMatchers("/campaign/track").authenticated()
+            .and()
+            .csrf().disable().headers().frameOptions().disable()
+
+        return this.build()
+    }
+}
+```
+
+SecurityFilterChain Beans können mehrfach definiert werden und durch @Order die Reihenfolge der Regelbearbeitung verändert werden. [nachschauen wegen diagrammen in dokumentation und so]
+
+Anmerkung: @EnableGlobalMethodSecurity is deprecated, aber in betracht des Aufwands nicht rechtfertigbar. 
+
+springdoc integration:
+
+im vergleich zu springfox macht springdoc das meiste über die yaml config.
+rewrites bei den mustache templates nötig, da wechsel von swagger auf openapi annotations nötig war.
+@Api -> @Tag
+@ApiOperation -> @Operation
+@ApiImplicitParams -> @Parameters
+
+```
+springdoc:
+  swagger-ui:
+    try-it-out-enabled: true
+    disable-swagger-default-url: true
+    path: /swagger-ui -> /api/v1/swagger-ui/index.html
+
+  api-docs:
+    path: /v2/api-docs
+```
+
+springdoc konfiguration durch Beans.
+```
+@Bean
+fun api(): OpenAPI {
+    return OpenAPI()
+        .info(
+            Info().title("Customerportal by mogree API")
+                .description("Webservice for the customerportal by mogree")
+                .version(buildNR)
+                .contact(Contact().email("team@mogree.com"))
+        )
+}
+private fun apiInfo(): Info {
+    return 
+}
+```
+
+
+dann noch test daten hinzugefügt mit hilfe von liquibase migrations.
+funktioniert in 2 steps:
+
+1. docker-compose.yaml:
+mapping zwischen drives herstellen (volumes)
+
+```
+  customerportal-liquibase-service:
+    ...
+    volumes:
+      - ./init:/liquibase/scripts
+    ...
+```
+
+2. sql files:
+ersten zwei zeilen in jeder file:
+```
+--liquibase formatted sql // https://docs.liquibase.com/concepts/changelogs/sql-format.html
+--changeset lhofwimmer:1
+```
+liquibase supports changelog files in sql format. ansonsten wird datei nicht richtig geparsed.
+datei muss noch einem changeset zugeordnet weden. kann irgendeinen namen haben und sich auch über mehrere files erstrecken.
+
+changelog besteht aus einer menge von changeset. 
+maybe das bild: https://docs.liquibase.com/z_resources/images/changelog-structure.png - https://docs.liquibase.com/concepts/changelogs/home.html
+
+Startet man die compose container, werden alle insert statements im zuge von den liquibase migrations ausgeführt.
+test daten stammen von stage system. umfang an daten hat vorteil, dass viele verschiedene datenkombinationen vorhanden sind und leichter zu erkennen ist,
+sollten gewisse requests nicht richtig funktionieren.
+
+spring.jpa.properties.hibernate.dialect property kann entfernt werden, da mittlerweile automatisch erkannt.
+
+Wechsel von kotlin-logging auf slf4j kurz erwähnen.
+Hat vor allem Vorteil aufgrund des supports und industry standard.
+
+interne typen von hibernate haben sich teilweise geändert. dadurch haben gewisse queries nicht mehr funktioniert, was durch die test sichtbar wurde.
+OffsetDateTime values können nicht mehr einfach wie instant behandelt werden, sondern brauchen ihr eigenes handling [doku genauer nachlesen.]
+manche queries haben wegen benennungen nicht mehr funktioniert. manche columns waren mit keywords benannt worden. hat nicht mehr funktioniert, 
+auot_quote_keyword: true und globally_quoted_identifiers_skip_column_definitions: true hat das gefixed.
+
+```
+spring
+  jpa:
+    properties:
+      hibernate:
+        id:
+          new_generator_mappings: false
+          db_structure_naming_strategy: single
+        timezone:
+          default_storage: NORMALIZE
+        hbm2ddl:
+          auto: none
+        globally_quoted_identifiers_skip_column_definitions: true
+        auto_quote_keyword: true
+```
+
+
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+
+bei bibliothek in einleitung system erklären: artifactory und lokale libs.
+
+artifactory ist ein library repository. wurde von mogree zeiten übernommen und immer noch verwendet.
+
+lokale libs zum testen: ~/.m2/repository
+mogree-codegen z.b.: ~/.m2/repository/com/mogree/server/codegen/mogree-codegen
+path nach repository entspricht packageId + artifactId. mogree-codegen is artifactId.
+published man nach mavenLocal(), dann wird das dort gelagert.
+
+so published man lokal:
+```
+publishing {
+    repositories {
+        mavenLocal()
+    }
+}
+```
+
+zum consumen lokal:
+```
+repositories {
+    mavenLocal()
+}
+```
+
+zum consumen von gradle plugins (für mogree-codegen wichtig):
+```
+buildscript {
+    repositories {
+        mavenLocal()
+    }
+}
+
+pluginManagement {
+    repositories {
+        mavenLocal()
+    }
+}
+```
+
+
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+
+lib mogree-spring
+
+upgrade auf gradle 7.6
+
+ansonsten nur die üblichen spring boot migrations
+-> javax -> jakarta
+-> upgrade java 8 -> 17
+-> bump version number
+
+tricky bei migration:
+
+spring boot generiert 2 jar files: plainJar und bootJar.
+für libraries wird plainJar benötigt. bootjar würde den webserver starten [checken, ob er das wirklich macht]
+plain enthält nur modul klassen und resourcen
+bootjar enthält auch zusätzlich noch dependencies
+artifact jar wählt jar aus
+from components.jar -> fetched alle Java Artifakte um sie zu includen
+zuvor war nur `artifact jar` definiert.
+hat nicht ausgereicht wegen versionskonflikten bei den depencies oder so.
+
+publications {
+     mavenJava(MavenPublication) {
+        groupId = 'com.mogree.server'
+        artifactId = 'mogree-spring'
+        version = "1.0.23"
+        from components.java
+
+        versionMapping {
+            usage('java-api') {
+                fromResolutionOf('runtimeClasspath')
+            }
+            usage('java-runtime') {
+                fromResolutionResult()
+            }
+        }
+    }
+}
+
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+
+lib library-jwt
+
+upgrade auf gradle 7.6
+
+ansonsten nur die üblichen spring boot migrations
+-> javax -> jakarta
+-> antMatcher -> requestMatcher
+-> upgrade java 8 -> 17
+-> bump version number
+
+nur kleine changes notwendig
+
+
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+
+lib mogree-codegen
+
+mogree-codegen ist fork von swagger-codegen mit speziellen anpassungen für mogree specifics.
+codegen hat keine möglichkeit, params klassen zu erzeugen. param in dem kontext ist z.b. ein Json request objekt.
+codegen wurde um das verhalten erweitert.
+
+generiert 4 folder:
+-> api
+-> model
+-> param
+-> config
+
+api enthält openapi-annotationen und is interface für die implementierung in den controller. (-> swagger ui verwendet diese annotationen zum generieren der page)
+model enthält dtos, die der client als reponse erhaltet.
+aus allen request parameter wird ein param objekt erzeugt. pro endpoint wird eine param class erzeugt. 
+controller erhalten eine reihe von validators (anhand von aspectj werden die gefunden. der delegate erhält immer das param objekt)
+config enthält swagger-ui config. (z.b. version, email, firma, etc.)
+
+ist ein runtime plugin, configuration step wär zu früh und würd nur einmal hitten und nicht bei jedem build (check gradle runtime vs configuration plugins zeug)
+
+ablauf funktioniert so:
+
+swagger.yaml specification -> gradle script generiert controller (mithilfe von mustache) -> output landet in ./src/generated
+
+codegen verwendet delegate pattern. [dann grafik einbauen.]
+delegate pattern spaltet logik und implementierung auf
+controller hat keine logik sondern called nur schemaartig den service mit einer reihe von validators.
+error codes werden durch exception handling geregelt.
+
+```
+@RestController
+public class AccountApiController implements AccountApi {
+    @Autowired(required = false)
+    private List<IValidator<? extends Object>> validators;
+
+    private AccountApiDelegate delegate;
+
+    @Autowired
+    public AccountApiController(AccountApiDelegate delegate) {
+        this.delegate = delegate;
+    }
+
+    public ResponseEntity<DetailResponse<UserAuthModel>> login(
+            @Parameter(description = "Email of user", required = true) @RequestHeader(value = "mogree-Mail", required = true) String mogreeMail,
+            @Parameter(description = "Password of user", required = true) @RequestHeader(value = "mogree-Password", required = true) String mogreePassword
+    ) {
+        ParamLogin paramLogin = new ParamLogin(mogreeMail, mogreePassword);
+        return new Executer(validators).validate().usecase(() -> delegate.login(paramLogin)).run();
+    }
+}
+```
+
+
+gradle plugins bauen ist umständlich, weil man zwei sourcesets hat, die identisch sind. ./src und ./buildSrc.
+-> ./src zum project build und entwickeln.
+-> ./buildSrc zum deployen
+daher recht umständlicher prozess
+
+ansonsten migrations:
+-> swagger-codegen von 2.2.0 auf 2.4.31
+-> general refactorings. (gewisse Typen haben sich geändert, zum beispiel sind manche typen wie Boolean primitives)
+-> documentation für zukünftige weiterarbeit geschrieben.
+-> gradle 7.6
+
+```
+mavenLocal {
+    metadataSources {
+        artifact()
+    }
+}
+```
+
+problem verursacht:
+
+params folder hardcoded im path /src/generated/java und nicht von config abhängig. hat probleme mit sourcesets verursacht. konnte dann gelöst werden durch folgenden rewrite.
+```
+after:
+private String paramFileFolder(MogreeAbstractJavaCodegen config) {
+    return config.outputFolder() + "/" + config.sourceFolder + "/" + "com.mogree.server.gen.param".replace('.', '/');
+}
+
+before:
+private String paramFileFolder(MogreeJavaCodegenConfig config) {
+    return config.outputFolder() + "/src/generated/java" + "/" + "com.mogree.server.gen.param".replace('.', '/');
+}
+```
+
+
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+
+angular 10 -> 14:
+
+erster gedanke auf angular 15 upgraden. stellt sich heraus auf angular 15 is im kontext von angular mdc viel passiert. man müsste also viel neu schreiben.
+frontend is aber nur nebensächlich und wird nur von manchen kunden verwendet. daher ned worth oder wirtschaftlich. entscheidung daher -> auf angular 14 bleiben.
+https://angular.io/guide/releases#actively-supported-versions angular 14 is lts version. wird bis 18.11.2023 gewartet.
+angular 14 change aufwand im vergleich zu angular 15 vertretbar.
+
+
+https://update.angular.io/ wurde zum upgraden verwendet.
+
+inkrementelles upgrade modell: 10 -> 11 -> 12 -> 13 -> 14...
+dadurch sind keine rießigen sprünge. es kann zwischenstand getestet werden.
+großteils passiert automatisch durch commands (code wird automatisch replaced):
+-> ng update @angular/core@11 @angular/cli@11 
+aber einige punkte müssen manuell überprüft werden.
+
+angular update verwendet intern https://angular.io/guide/schematics zum updaten von code.

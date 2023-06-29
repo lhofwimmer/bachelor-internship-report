@@ -1,0 +1,46 @@
+\chapter{Einleitung}
+\label{cha:intro}
+
+Im Zuges des Berufspraktikums im sechsten Semester durfte ich mein Können als Software-Entwickler bei der Firma Cloudflight beweisen. Dabei konnte ich viele wertvolle Erfahrungen und Eindrücke mitnehmen, mein Fachwissen verbessern und ein praktisches Verständniss dafür entwickeln, wie man eine Firma dieser Größenordnung richtig leitet und organisiert. 
+
+\section{Cloudflight}
+
+Cloudflight ist ein Linzer IT-Unternehmen. Es wurde 2005 unter dem Namen Catalysts von Christoph Steindl und Christian Federspiel in Linz gegründet und spezialisiert sich auf Dienstleistungs-Software für Drittunternehmen. Das Unternehmen besteht aus einer Vielzahl von kleinere Teams, die sich jeweils um ein Projekt kümmern. Dadurch kann eine Vielzahl an verschiedenen Kunden gleichzeitig betreut werden. Auftraggeber reichen von privaten Firmen wie Fronius bis hin zu staatlichen Insitutionen, wie das Land Oberösterreich oder die europäische Raumfahrtsbehörde.
+
+Ein besonderes Augenmerk ist auf den alle sechs Monate stattfindenden CCC - \textit{Cloudflight Coding Contest} zu legen. Dabei veranstaltet Cloudflight an einer Vielzahl von europäischen Bildungseinrichtungen einen Wettkampf, bei dem es unter Zuhilfenahme von Programmierung gilt, immer herausforderndere Rätsel zu lösen.
+
+\section{Zielsetzung}
+
+Die Hauptaufgabe des Praktikums besteht darin, das \textit{Customerportal} von Spring Boot 2 auf Spring Boot 3 zu aktualisieren. Was sich auf den ersten Blick als banale Aufgabe darstellt, entpuppt sich jedoch im Laufe dieser Arbeit als Rhizom-artige Struktur, die ein komplexes Abhängigkeitsgeflecht darstellt. 
+
+Dabei gilt es, nicht nur eine bloße Aktualisierung von Spring Boot selbst durchzuführen, sondern auch Bibliotheken, wie den Code-Generator und den Dokumentations-Generator auf einen neuen Stand zu bringen.
+
+Zusätzlich, aber mit einer niedrigeren Priorität, muss auch das Frontend in Form einer Angular Web-Applikation aktualisiert werden. Original entwickelt wurde das \textit{Customerportal} 2020, seither aber nicht am aktuellsten Stand gehalten.
+
+\section{Nebenaufgaben}
+
+Neben der Hauptaufgabe um Spring Boot wurden auch kleinere Nebenaufgaben erledigt. Die beiden größten dabei waren die Aktualisierung der Android-Applikation \textit{mathe2go} und das Schreiben von Dokumentation bezüglich der Verwendung von \textit{Structurizr}. 
+
+\subsection{mathe2go}
+
+\textit{mathe2go} ist eine Android- und iOS-Applikation zur Unterstützung von Schülern in der Vorbereitung auf die Zentralmatura in Mathematik. Schüler loggen sich in der App ein, lernen Theorieabschnitte - in Kapitel eingeteilt- und prüfen dieses Wissen anschließend in \textit{Quicktests} und einem Abschlusstest ab. Original stammt dieses Projekt aus 2017. Dieses Projekt diente zusätzlich als Einstiegsprojekt meines Praktikums, da es ein kleineres Projekt in Umfang war.
+
+Google fordert, dass Apps im Google Play Store mit neuen Android Versionen kompatibel bleiben muss. Kommen nun Deprecations einer Api in einer neuen Android Version hinzu, müssen Anpassungen im Code vorgenommen werden, dass es zu keinen Problemen bei Endnutzern kommt. Nach mehreren Jahren der Instandhaltung kamen einige größere Punkte, die bisher unerledigt blieben, zusammen und konnten auf einmal behandelt werden. So wurde von der Bibliothek \texttt{Butterknife} zum nativen Ansatz mit Viewbindings gewechselt, die Bibliothek zum lokalen Caching durch \texttt{sqldelight} ersetzt und einige Unit-Tests und Integrations-Tests geschrieben.
+
+\subsection{Structurizr}
+
+Die zweitere - kleinere - Nebenaufgabe dreht sich um \textit{Structurizr} und das C4 Modell. Konkret ist \textit{Structurizr} eine Web-Applikation zum Erstellen, Generieren und Bearbeiten von C4 Modellen. C4 Modelle sind der Versuch, den Gedanken hinter UML-Diagrammen auf gesamte Software-Systeme zu übertragen und standardisieren. Software-Systeme sind in vier Schichten unterteilt. Diese sind wie folgt:
+
+\begin{enumerate}
+    \item \textbf{System Context} stellt die höchste und damit auch die abstrakteste Schicht des Modells dar. Hier interagieren die Benutzer mit dem System. Der Fokus liegt darauf, ein Software-System und dessen Kontext im umliegenden Feld darzustellen. Mögliche \textit{System Contexts} sind zum Beispiel ein Email-System. Das zentrale Backend eines Systems.
+    \item \textbf{Container} konkretisieren ein Software-System, sind aber weiterhin sehr abstrakt. Mögliche Container sind eine Angular-Applikation, die Datenbank, das Backend.
+    \item \textbf{Components} umfassen Teile eines Containers. Das umfasst zum Beispiel eine Login-Komponente oder das Authentifizierungs-System im Backend.
+    \item \textbf{Code} ist die detailierteste Ebene im C4 Modell. Hier liegt Code im Form eines UML-Diagrammes.
+\end{enumerate}
+
+Bisher bestand die Firmen-interne Dokumentation für \textit{Structurizr} nur sehr fragmentiert. Daher wurde im Umfang dieses Praktikums auch eine Aufbereitung vorgenommen und eine detailierte Anleitung zur Verwendung von \textit{Structurizr} erstellt. Dabei gibt es zwei Ansätze zur Erstellung des C4 Modells: manuell und automatisch in Form einer Compiler-Erweiterung. Beide diese Ansätze wurden dokumentiert und im zentralen Wissensspeicher der Firma gespeichert.
+
+\section{Struktur der Arbeit}
+
+Dieser Bericht ist in vier Kapitel unterteilt. Die \nameref{cha:intro} beschreibt kurz das Unternehmen und kleinere Nebenaufgaben, die während des Praktikums erledigt wurden. Außerdem entählt es die Zielsetzung der Hauptaufgabe und eine Übersicht über die Struktur. 
+Im Kapitel \nameref{cha:design} geht dieser Bericht auf die Ausgangslage, den Projektkontext, verwendete Technologien und Lösungsansätze ein und erklärt das \textit{Customerportal} im Detail. \nameref{cha:implementation} zeigt die praktische Umsetzung der Migration auf Spring Boot 3 und wie das Ergebnis auf dessen Funktionalität getestet wurde. Das Kapitel \nameref{cha:synopsis} schildert persönliche Erfahrungen des Autors und welche Schritte im weiteren Verlauf zu erledigen wären.

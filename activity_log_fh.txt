@@ -1,0 +1,84 @@
+customerportal:
+- libraries upgraden
+- alles so aktuell wie möglich machen
+
+done:
+- upgrade angular 10 -> 15 -> 14
+- jenkins config 
+
+Sehr geehrter Herr Professor Dobler,
+
+hier mein Tätigkeitsbericht zu den letzten beiden Wochen meines Berufspraktikums:
+
+Im Vergleich zu meinem letzten Bericht, wird dieser etwas kürzer sein, da ich mir vorletzte Woche drei Urlaubstage und letzte Woche den Freitag als Zwickeltag ebenfalls als Urlaub genommen habe. Dementsprechend umfasst dieser Bericht 5 Arbeitstage. In diesem Zeitraum war ich weiterhin mit dem Umstieg von Spring Boot 2 -> 3 beschäftigt, konnte jedoch einige große Punkte abschließen, allen voran die von kapt verursachten Probleme.
+
+Diese Probleme hatten zwei Ursprünge: Unser interne Bibliothek mogree-codegen zum Generieren der Controller und mapstruct zum Generieren der Dtos. Nachdem ich bei mogree-codegen die Abhängigkeiten aktualisiert habe, behob ich noch einige Kleinigkeiten, die 2020 im Pfusch entstanden sind (z.B. waren noch einige Pfade hard-coded, weswegen eine Änderung des Zielpfads zu Problemen führte.) und ergänzte Teile der Dokumentation für die zukünftige Weiterentwicklung (auch wenn diese Bibliothek potenziell in zukünftigen Projekten nicht mehr eingesetzt wird).
+
+Abgesehen davon beschäftigte ich mich generell mit dem aktualisieren von veralteten Code-Fragmenten, die durch den Umstieg auf Spring Boot 3 aktualisiert gehörten. Darunter fiel unter anderem der Umstieg von Hibernate 5 -> 6, Spring Security 5 -> 6. Als voraussichtlich letzte Aufgabe, die noch nicht abgeschlossen ist, beschäftige ich mich gerade noch damit, dass ich die autogenerierte REST Api-Dokumentation unter Spring Boot 3 funktionsfähig bekomme. Die Bibliothek springfox, die wir bisher für diesen Zweck verwendeten, wird leider nicht mehr unterstütz, weshalb ich nun gerade am Umstieg auf springdoc-openapi arbeite.
+
+Bis in zwei Wochen bei meinem nächsten Bericht und mit freundlichen Grüßen,
+
+Lukas Hofwimmer
+
+
+
+- openapi-generator evaluiert, obs worth is umzusteigen (dementsprechend auch swagger auf openapi) -> not worth. stattdessen nur refactoring
+- mogree-codegen update auf neue libs, kleinere bugfixes wie hardcoded paths
+- library-jwt updated
+- structurizr erklären und 
+- 
+
+Sehr geehrter Herr Professor Dobler,
+
+hier mein Tätigkeitsbericht zu den letzten beiden Wochen meines Berufspraktikums:
+
+Ich konnte in diesen beiden Wochen die Migration auf Spring Boot 3 größtenteils abschließen, nachdem ich die Migration von springfox auf springdoc fertigstellen konnte. Hierfür waren in zwei Gebieten größere Änderungen vorzunehmen. In einem ersten Schritt musste ich die Template Dateien, anhand welcher die Controller generiert werden, umändern, sodass von nun an nicht mehr Swagger 2 Annotation, sondern OpenApi Annotationen für die Controller generiert werden. Diese Annotation sind insofern wichtig, da durch diese die Api-Spezifikation und in Folge dessen die Swagger UI Oberfläche generiert wird. Dies nahm mehr Zeit in Anspruch, als zu Beginn angenommen, da Teile des Systems, zum Beispiel das Konzept hinsichtlich dem Zugriff auf abgesicherte Komponenten der Api, schwieriger zu migrieren waren.
+
+Abgesehen davon konnte ich mit meinem Wissen zu einer sogenannten "Communities of Practice" beitragen. Dabei handelt es sich um den Versuch, eine standartisierte Wissenbasis in der Firma zu etablieren. CoPs sind grob in gewisse Bereiche unterteilt. So gibt es ein CoP für Frontend, JVM Technologien, C#, etc. Konkret treffen sich Experten zu einem Themenbereich, sammeln Fragen (z.B.: welche Bibliothek soll bei Android für Api-Anfragen verwendet werden?) und erarbeiten anhand dieser dann Standarts, die in CoPs zusammengefasst sind. In diesen Meetings konnte ich meine Perspektive einbringen und anschließend noch zum Thema Structurizr und C4 Modell eine Anleitung beitragen.
+
+Mit dem nun laufenden Spring Boot 3 Backend geht es ans Testen. Dies bewerkstelligte ich mithilfe des Angular Frontends. Das hat den Vorteil, dass man leicht und schnell sieht, welche Abfragen nicht richtig funktionieren und wo dementsprechend Fehler behoben werden müssen. Ebenso bietet es auch die Möglichkeit, etwaige Fehler, die mit dem Umstieg auf Angular 14 möglicherweise entstanden sind zu erkennen und beheben. Dabei konnte ich schon erste Probleme beheben, bin aber noch nicht fertig damit.
+
+Bis in zwei Wochen bei meinem vorletzten Bericht und mit freundlichen Grüßen,
+
+Lukas Hofwimmer
+
+- structurizr
+- mustache templates - annotations
+- init script (remove customer specific data)
+- GenerationType.IDENTITY
+- springdoc migration
+
+#########################################################################
+
+What has been done overall:
+1. Teil:
+	- credentials
+	- spring 2.7.11 + alle libs auf new version
+
+2. Teil:
+	- Libraries maybe:
+	- library-jwt
+	- mogree-spring
+	- mogree-codegen
+
+
+
+
+
+problem bei codegen:
+- verwendet mogree
+
+lösungsansätze für codegen:
+- codegen entfernen
+- versuchen, ob lib ohne mods funktioniert
+- lib neu entwickeln
+- minimalinstandhaltung hauptsache es läuft <-
+
+system parts:
+- customerportal-web
+- customerportal-backend
+- library-jwt
+- mogree-spring
+- mogree-codegen
+
+

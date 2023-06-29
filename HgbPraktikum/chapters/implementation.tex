@@ -1,0 +1,337 @@
+\chapter{Implementierung und Tests}
+\label{cha:implementation}
+
+Nachdem das letzte Kapitel die Vorgehensweise skizziert hat, gilt es nun diese Pläne umzusetzen. Zuerst werden die sensiblen Daten behandelt und alle Änderungen vorgenommen, sodass diese von nun an sicher verwahrt sind. Im Zuge dessen werden auch Abhängigkeiten auf den neuesten Stand gebracht und Spring auf eine empfohlene Zwischenversion aktualisiert.
+
+Sobald die sensiblen Daten abgesichert sind, kann auf die Migration von Spring Boot 2 auf 3 eingegangen werden. Neben dem Customerportal selbst müssen auch wichtige Bibliotheken mit Spring Boot 3 kompatible gemacht werden.
+
+\section{Behandlung von sensiblen Daten}
+
+Dieser Abschnitt beschreibt die Schritte, die nötig waren, um den Quelltext von sensiblen Daten zu bereinigen. Neben den erfolgreichen Unterfangen werden außerdem auch die Fehlschritte präsentiert. Dieser Abschnitt ist in dieselben Teilbereiche wie~\nameref{sec:design_sensitive_data} und setzt die Informationen davon voraus.
+
+\subsubsection{Spring Konfiguration}
+
+In einem ersten Schritt müssen die Konfigurationsdateien von Spring Boot vorbereitet werden. Im Falle des Customerportals handelt es dabei um Dateien des Typs \texttt{yaml}.
+
+Der erste Versuch war, dass die Werte weiterhin in den Konfigurationsdateien zugewiesen werden. Anstatt des tatsächlichen Wertes soll nun aber mit Zeichenketteninterpolation der Wert einer Umgebungsvariable zugewiesen werden. Hierbei handelt es sich aber nicht um Kotlin-Zeichenketten-Interpolation, sondern um die von \texttt{Groovy}. Daher muss ein Schrägstrich vorm Dollar-Zeichen platziert werden: \texttt{\textbackslash\${<variable>}}.
+
+Dieser Ansatz hat nicht richtig funktioniert, da den Eigenschaften in den Konfigurationsdateien kein Wert zugewiesen wurde. Daher fiel die Entscheidung stattdessen auf den zweiten Ansatz: die direkte Verwendung von Umgebungsvariablen. Dabei enthalten die Konfigurationsdateien die sensiblen Eigenschaften gar nicht mehr. Spring Boot findet die gesuchten Eigenschaften anhand eines Namensschema in den Umgebungsvariablen. Um dabei nicht die Übersicht zu verlieren, erinnert ein Kommentar anstelle der Eigenschaft in den Konfigurationsdateien auf die Konfiguration durch Umgebungsvariablen.~\autoref{tab:env_variables} zeigt die Eigenschaften der Konfiguration, die sensible Daten enthalten und deren Repräsentationen als Umgebungsvariablen.
+
+\begin{table}[]
+\caption{Konfigurationsdatei- und Umgebungsvariablensyntax der Eigenschaften der Konfiguration, die sensiblen Daten enthalten.}
+\label{tab:env_variables}
+\begin{tabular}{ll}
+Konfigurationsdateisyntax           & Umgebungsvariablensyntax               \\
+\texttt{spring.datasource.username} & \texttt{SPRING\_DATASOURCE\_USERNAME} \\
+\texttt{spring.datasource.password} & \texttt{SPRING\_DATASOURCE\_PASSWORD} \\
+\texttt{spring.mail.username}       & \texttt{SPRING\_MAIL\_USERNAME}       \\
+\texttt{spring.mail.password}       & \texttt{SPRING\_MAIL\_PASSWORD}       \\
+\texttt{spring.mail.sender}         & \texttt{SPRING\_MAIL\_SENDER}         \\
+\texttt{jwtTokenSecret}             & \texttt{JWTTOKENSECRET}               \\
+\texttt{jwtTokenIssuser}            & \texttt{JWTTOKENISSUER}
+\end{tabular}
+\end{table}
+
+\subsubsection{Jenkins Konfiguration}
+
+Die sensiblen Daten, die in den \textit{Config}-Dateien in Jenkins abgelegt sind, sind einer von zwei Kategorien zugeteilt. Ist eine Variable in jedem Build vorhanden, dann wird sie in der Datei \texttt{general.env} abgelegt. Ist eine Datei spezifisch für einen Build (z.B.: Zugangsdaten zu einer spezifischen Datenbank), dann liegt sie in der Datei \texttt{<system-name>.env}. Der Systemname wird auf Basis der Auswahl des parametrisierten Build bestimmt. Dadurch kann der/die Benutzer:in über die Benutzeroberfläche in Jenkins die richtige spezifische Datei auswählen. Kommt ein neues System hinzu, muss die Auswahl des parametrisierten Build erweitert werden und eine neue Datei mit Namen des neuen Parameterwerts erstellen werden.~\autoref{lst:parametrized_build} zeigt den Code zum Auswahl des Zielsystems.
+
+\begin{Groovy}[numbers=none, caption={caption}, label={lst:parametrized_build}]
+parameters {
+    choice(name: 'environment', choices: ['backend', 'cp-abfallooe', 'cp-aha', 'cp-familypass', 'cp-linzag', 'cp-voestma', 'cp-wacker-usedmachines'], description: 'Please select which environment should be built.')
+}
+\end{Groovy}
+
+
+\subsubsection{Jenkins Pipeline}
+
+Die Jenkins Pipeline enthält ihre Logik in der Datei \texttt{Jenkinsfile}. Bei dieser Datei handelt es sich trotz fehlender Dateiendung um eine Groovy-Datei. Diese Datei muss um Funktionalität erweitert werden, sodass die Dateien mit den Umgebungsvariablen von Jenkins auf die Test- und Produktivsysteme übertragen werden können. Um auf die \textit{Config}-Dateien zugreifen zu können, benötigt es die Funktion \texttt{configFileProvider} von Jenkins. Diese Funktion benötigt zwei Parameter: \texttt{fileId} ist ein von der/dem Entwickler:in vergebener Name und \texttt{variable} definiert den Namen der Variable, die den Dateinamen referenziert.
+
+In einem ersten Anlauf wurde versucht, mit der Funktion \texttt{sh} einen Kopier-Befehl von Docker auf die Dateien anzuwenden. Zu diesem Zeitpunkt war jedoch noch unklar, dass die Test- und Produktivsysteme auf einem anderen Server liegen, weshalb der primitive Ansatz mit \texttt{docker cp} nicht funktionierte.~\autoref{lst:failed_copy} zeigt den fehlgeschlagenen Versuch.
+
+\begin{Groovy}[numbers=none, caption={Gescheiterter Versuch, die Umgebungsvariablen in den Docker Container zu kopieren.}, label={lst:failed_copy}]
+configFileProvider([configFile(fileId: '.env', variable: 'ENV_CREDENTIALS')]) {
+    sh "docker cp \${ENV_CREDENTIALS} \$projectname:\$docker_path/.env"
+}
+\end{Groovy}
+
+Stattdessen konnte auf das Werkzeug \texttt{ansible} von Red Hat zurückgegriffen werden. Dieses Werkzeug wird zum Kopieren der \texttt{jar}-Dateien auf das Zielsystem bereits verwendet. Daher muss der \texttt{ansible} nur noch auf die neuen Dateien angepasst werden. Da eine Jenkins Pipeline eine Groovy-DSL ist, kann auch Zeichenketteninterpolation verwendet werden, um die \texttt{ansible}-Befehle zu konstruieren. Dabei ist jedoch zu beachten, dass die Interpolation nur bei Zeichenketten mit doppelten Anführungszeichen verfügbar ist.~\autoref{lst:jenkinsfile} zeigt die Logik zum Kopieren der Dateien mit den Umgebungsvariablen auf das Zielsystem.
+
+\begin{Groovy}[numbers=none, caption={Logik zum Kopieren der Dateien mit den Umgebungsvariablen auf das Zielsystem.}, label={lst:jenkinsfile}]
+stage('Stage Server') {
+    ...
+    steps {
+        copyEnvFiles(docker_path_environment, server_stage)
+        deploySpringToDocker(gradlePackageCommand, artifactName, extension, projectname, server_stage, docker_path_environment)
+    }
+    ...
+}
+
+def copyEnvFiles(String basePath, String hostname) {
+    configFileProvider([
+        configFile(fileId: "\${params.environment}.env", variable: 'PARAMS_ENV'),
+        configFile(fileId: "general.env", variable: 'GENERAL_ENV')
+    ]) {
+        copyEnvFile(PARAMS_ENV, "\${basePath}/\${params_env_file}", hostname)
+        copyEnvFile(GENERAL_ENV, "\${basePath}/\${general_env_file}", hostname)
+    }
+}
+
+def copyEnvFile(String from, String to, String hostname) {
+    sh "ansible -m copy -a 'src=\${from} dest=\${to} owner=root group=root' '\${hostname}' --private-key=/var/lib/jenkins/.ssh/id_rsa -u root"
+}
+\end{Groovy}
+
+\subsubsection{Docker}
+
+Die Dateien mit den sensiblen Daten liegen jetzt am Zielsystem, müssen aber noch in den Docker Container exportiert werden. Daher muss die \texttt{Dockerfile}, die den Container erstellt, um einen \texttt{export}-Befehl erweitert werden.
+
+Der Befehl \texttt{export \$(grep -h -v '\textasciicircum\#' \*.env | xargs)} lest zuerst mit \texttt{grep} alle Dateien im Verzeichnis, die mit \texttt{.env} enden, zeilenweise ein. Mithilfe des Befehls \texttt{xargs} definiert der Befehl \texttt{export} anschließend für jede Zeile eine neue Umgebungsvariable. Der Docker-Befehl \texttt{ENTRYPOINT} führt diesen Befehl im Docker-Container aus und macht dadurch die Umgebungsvariablen für den Spring Boot Server verfügbar.~\autoref{lst:dockerfile} zeigt die \texttt{Dockerfile} des Customerportals.
+
+\begin{Docker}[numbers=none, caption={Die \texttt{Dockerfile} des Customerportals}, label={lst:dockerfile}]
+FROM amazoncorretto:17-alpine3.17
+
+HEALTHCHECK --interval=5s --timeout=5s --retries=3 CMD wget http://localhost:8080/api/v1/system/health?secure=backendMogree123! -q -O - > /dev/null 2>&1
+
+WORKDIR /opt/
+COPY customerportal-latest.jar app.jar
+COPY *.env ./
+COPY config ./config/
+
+ENTRYPOINT export \$(grep -h -v '^#' *.env | xargs) && \
+            java -Dspring.profiles.active=\${SPRING_PROFILES_ACTIVE} \${ADD_JAVA_OPTS} -jar app.jar
+
+EXPOSE 8080
+\end{Docker}
+
+Die Dokumentation für diesen Prozess ist in der Beschreibung des Projekts verfügbar. Mit nun verfügbaren Umgebungsvariablen kann die Migration auf 
+
+\section{Aktualisierung von Spring Boot}
+
+Die Herausforderung bei der Aktualisierung von Spring Boot ist, dass viele Komponenten ineinandergreifen. Eine Komponente kann potenziell das ganze System brechen. Dieser Faktor verbunden mit der schlechten Entwicklerunterstützung von Gradle beim Ermitteln von Fehlerquellen erfordert daher einen sehr granularen Migrationsprozess. In einem ersten Schritt müssen Vorbereitungen getroffen werden, indem Abhängigkeiten aktualisiert werden. Anschließend können Aktualisierungen bei privaten Bibliotheken vorgenommen werden. Erst dann kann die eigentliche Migration des Customerportals begonnen werden.
+
+\subsection{Vorbereitung}
+
+Die Vorbereitung wurde im Zuge der Behandlung von sensiblen Daten bereits vorgenommen. Zur besseren Leserlichkeit und Strukturierung wird jedoch erst hier darauf eingegangen. In dieser Vorbereitung auf die eigentliche Migration werden öffentliche Abhängigkeiten aktualisiert und die Spring Boot Version auf 2.7.11 erhöht.
+
+\begin{table}[h]
+\caption{Aktualisierungtabelle der öffentlichen Abhängigkeiten}
+\label{tab:public_versions}
+\begin{tabular}{lll}
+Abhängigkeit         & Von            & Nach          \\
+Gradle               & 6.6.1          & 8.1.1         \\
+Kotlin               & 1.4.31         & 1.5.32        \\
+kapt                 & 1.4.10         & 1.5.32        \\
+Spring Gradle Plugin & 1.4.31         & 1.6.21        \\
+Gradle JPA Plugin    & 1.4.10         & 1.6.21        \\
+Spring Boot          & 2.3.2.RELEASE  & 2.7.11        \\
+Springfox            & 2.9.2          & 3.0.0         \\
+Mapstruct            & 1.3.1.Final    & 1.5.5.Final   \\
+Liquibase            & 4.7.1          & 4.21.1        \\
+FirebaseAdmin        & 6.16.0         & 9.1.1         \\
+Apns                 & 1.0.3          & 1.0.3         \\
+Pushy                & 0.14.1         & 0.15.2        \\
+jwt                  & 3.3.0          & 4.4.0         \\
+retrofit             & 2.9.0          & 2.9.0         \\
+jacksoncsv           & 2.10.0         & 2.15.0        \\
+thymeleaf            & 3.0.11.Release & 3.1.1.RELEASE \\
+okhttp               & 2.7.5          & 4.10.0       
+\end{tabular}
+\end{table}
+
+Mehrheitlich verlief dieser Prozess problemlos, nachdem bei jeder Bibliothek das Änderungsprotokoll genau auf grobe Änderungen überprüft wurde. Bei der Aktualisierung von Springfox auf Version 3 änderten sich Klassen, die die Konfigurations-Bean benötigte. Die Abhängigkeit \texttt{mysql:mysql-connector-java} änderte ihre Maven-Koordinaten zu \texttt{com.mysql:mysql-connector-j}, da eine \texttt{groupId} mit nur einem Wort nicht mehr den Maven \textit{Best Practices} entspricht~\parencite{mavenmysql}.
+
+Parallel zu den Vorbereitungen kam noch der Pull-Request eines Kollegen hinzu, der das Projekt mit Docker Compose containerisiert. Während am Server bereits Docker verwendet wurde, war die lokale Entwicklung bisher ohne Container. Um jedoch eine realitätsnahe Umgebung lokale bieten zu können, macht die Verwendung von Docker hier Sinn. Insgesamt gibt es drei Container: einen für die MySql Datenbank, einen für die Liquibase Migrationen und einen für die Spring Boot Instanz. Die Container sind voneinander abhängig. Als erstes startet der MySql-Container. Ist der Container in einem gesunden Zustand, werden die Liquibase Migrationen durchgeführt. Beendet die Migration mit dem Statuscode \texttt{0}, wird der Spring Boot Container gestartet. Kommt es in einem Container zu einem Fehler, wird der betroffene Container neugestartet.
+
+\subsection{Bibliotheken}
+
+Um eine Bibliothek in einem Projekt verwenden zu können, müssen Bibliotheken in einem \textit{Maven Repository} veröffentlicht werden. Für diesen Zweck betreibt Cloudflight eine Artifactory-Instanz. Für die lokale Entwicklung wäre aber eine Veröffentlichung in diesem Repository zu umständlich, daher bietet Maven eine lokale Lösung an.
+
+Unter dem Pfad \texttt{~/.m2/repository} werden lokal veröffentlichte Bibliotheken abgelegt. Um auf diese Pakete Zugriff zu haben, muss das Repository mit der Funktion \texttt{mavenLocal} in Gradle referenziert werden. Dieselbe Funktion muss auch zum lokalen veröffentlichen von Bibliotheken verwendet werden.~\autoref{lst:maven_local_publish} zeigt die Logik zum lokalen veröffentlichen und~\autoref{lst:maven_local_consume} zeigt die Logik zum Verwenden von lokalen Bibliotheken.
+
+\begin{Groovy}[numbers=none, caption={Code zum lokalen veröffentlichen einer Bibliothek}, label={lst:maven_local_publish}]
+publishing {
+    repositories {
+        mavenLocal()
+    }
+}
+\end{Groovy}
+
+\begin{Groovy}[numbers=none, caption={Code zum inkludieren des lokalen Repository.},label={lst:maven_local_consume}]
+repositories {
+    mavenLocal()
+}
+\end{Groovy}
+
+Die Veröffentlichung von Gradle Plugins unterscheidet sich leicht zu der Veröffentlichung von herkömmlichen Bibliotheken. Anstatt die Referenz von \texttt{mavenLocal} nur in den \texttt{repositories}-Block zu geben, muss der \texttt{repositories}-Block nochmal dem \texttt{pluginManagement}-Block untergeordnet werden.~\autoref{lst:gradle_plugin_local} zeigt die Verwendung von \texttt{mavenLocal} für Gradle Plugins.
+
+\begin{Groovy}[numbers=none, caption={Code zum inkludieren des lokalen Repository für Gradle Plugins.}, label={lst:gradle_plugin_local}]
+pluginManagement {
+    repositories {
+        mavenLocal()
+    }
+}
+\end{Groovy}
+
+\subsection{Codegenerator}
+
+Mit einem Verständnis über die Verwendung von lokalen Bibliotheken, kann nun der Codegenerator aktualisiert werden. Als Erstes müssen die Abhängigkeiten auf den aktuellen Stand gebracht werden und dadurch entstandene Fehler behoben werden. Anschließend wurden kleinere Verbesserungen vorgenommen. Bisher waren zum Beispiel manche Pfade statisch und passten sich nicht der Konfiguration an. Nun werden alle Pfade dynamisch ermittelt. Die nötigen Änderungen dafür sind in~\autoref{lst:dynamic_folders} zu sehen. Zur weiteren Entwicklung wurde die Dokumentation erweitert.
+
+\begin{JavaCode}[numbers=none, caption={Die Funktion, die den Pfad für \texttt{param}-Klassen ermittelt.}, label={lst:dynamic_folders}]
+// before
+private String paramFileFolder(MogreeJavaCodegenConfig config) {
+    return config.outputFolder() + "/src/generated/java" + "/" + "com.mogree.server.gen.param".replace('.', '/');
+}
+
+// after
+private String paramFileFolder(MogreeAbstractJavaCodegen config) {
+    return config.outputFolder() + "/" + config.sourceFolder + "/" + "com.mogree.server.gen.param".replace('.', '/');
+}
+\end{JavaCode}
+
+Für die generierten Klassen des Codegenerators muss ein neues \texttt{SourceSet} erstellt werden. Anschließend muss dieses \texttt{SourceSet} von den anderen \texttt{SourceSets} referenziert werden, um einen Zugriff auf die Klassen zu ermöglichen. Bei Änderungen an diesem Prozess ist höchste Vorsicht geboten, da Gradle-Fehler oft schwer zu eruieren sind.~\autoref{lst:generated_source_set} zeigt die Erzeugungen und Verwendung des \texttt{generated-SourceSet}.
+
+\begin{JavaCode}[numbers=none, caption={Die Erstellung eines neuen \texttt{SourceSets} und die Referenzierung davon in einem anderen \texttt{SourceSet}.}, label={lst:generated_source_set}]
+val generatedSourceSetName = "generated"
+var generatedApi: Configuration = configurations.create(generatedSourceSetName).apply {
+    extendsFrom(configurations.implementation.get())
+}
+
+dependencies {
+    generatedApi("com.mogree.server:mogree-spring:1.0.23")
+    generatedApi("org.springframework.boot:spring-boot-starter-data-rest")
+    generatedApi("org.springdoc:springdoc-openapi-starter-webmvc-ui:\$springdocVersion")
+}
+
+sourceSets {
+    val generated = create(generatedSourceSetName) {
+        compileClasspath = generatedApi
+        runtimeClasspath = generatedApi
+    }
+    main {
+        compileClasspath += generated.output
+        runtimeClasspath += generated.output
+    }
+}
+\end{JavaCode}
+
+\subsection{Mogree-spring und library-jwt}
+
+Die Aktualisierung von \texttt{mogree-spring} und \texttt{library-jwt} war trivial. Da es sich bei den Beiden um Spring-Boot-Bibliotheken handelt, müssen aber gewisse Details beachtet werden. Auf die Details der Aktualisierung von Spring Boot geht der nächste Abschnitt ein.
+
+Spring Boot erzeugt zwei jar-Dateien bei der Übersetzung: \texttt{plainJar} und \texttt{bootJar}. \texttt{BootJar} enthält die Abhängigkeiten, die zum Start der Spring Boot Applikation nötig sind, \texttt{plainJar} enthält nur die Klassen und Ressourcen. Da es sich in diesem Fall um Bibliotheken handelt, ist \texttt{plainJar} zu verwenden.
+
+Die Veröffentlichung der beiden Bibliotheken stellte sich nach der Aktualisierung als Herausforderung heraus. Aus ungeklärten Gründen fehlten nach der Veröffentlichung Metadaten und Abhängigkeiten, wodurch die Bibliotheken in einem nicht verwendbaren Zustand waren. Die Lösung des Problems lag im Veröffentlichungsprozess. Mit der Funktion \texttt{from components.java} werden die Metadaten richtig referenziert. Mit der Funktion \texttt{versionMapping} können Abhängigkeitskonflikte behoben werden.~\autoref{lst:local_publish_fix} zeigt die funktionierende Funktion zum lokalen veröffentlichen.
+
+\begin{JavaCode}[numbers=none, caption={caption}, label={lst:local_publish_fix}]
+publications {
+    mavenJava(MavenPublication) {
+        groupId = 'com.mogree.server'
+        artifactId = 'mogree-spring'
+        version = "1.0.23"
+        from components.java
+
+        versionMapping {
+            usage('java-api') {
+                fromResolutionOf('runtimeClasspath')
+            }
+            usage('java-runtime') {
+                fromResolutionResult()
+            }
+        }
+    }
+}
+\end{JavaCode}
+
+\subsection{Spring Boot}
+
+Der sensibelste Prozess umfasst die Aktualisierung des Customerportals selbst. In einem ersten Schritt wurde die Kotlin Version auf \texttt{1.8.21} erhöht. Anschließend kann die Spring Version auf 3.1.0 angehoben werden.
+
+Dabei kam es zu den ersten Hürden. Das Customerportal verwendet zum Erzeugen der DTOs die Bibliothek \texttt{mapstruct} und benötigt daher \texttt{kapt}, einen Annotationsprozessor für Kotlin, der auf dem Java-Annotationsprozessor aufbaut. \texttt{Kapt} soll daher durch \texttt{ksp}, einen rein in Kotlin implementierten Annotationsprozessor, ersetzt werden. Daher ist \texttt{kapt} nur noch in einem Instandhaltungsmodus und unterstütz Java nur bis zu Version 15. Spring Boot 3 benötigt jedoch mindestens Java Version 17. Daher wurde zuerst die Migration auf Version 3 für unmöglich gehalten. Mit Lösungsansätzen aus~\parencite{kaptjdk17} und der richtigen Kombination an Versionen sowohl in Intellij, als auch in Gradle, konnte trotzdem Kompatibilität hergestellt werden. \texttt{Mapstruct} plant die Unterstützung von \texttt{ksp}, aber arbeitet noch an der Umsetzung~\parencite{mapstructksp}.
+
+Spring Security 6 bringt große Änderungen der \texttt{SecurityFilterChain}-Komponente mit sich. Bisher war jeder Filter in der \texttt{SecurityFilterChain} eine eigene Klasse. Mit Version 6 sind nun alle Filter-Beans als Funktionen anzugeben. Die Reihenfolge der Filter kann weiterhin mit der Annotation \texttt{@Order} bestimmt werden.~\autoref{lst:spring_security} zeigt eine Filter-Bean nach der Migration auf Spring Boot 3.
+
+\begin{JavaCode}[numbers=none, caption={Eine der \texttt{SecurityFilterChain}-Einträge unter Spring Boot 3}, label={lst:spring_security}]
+@Configuration
+@EnableGlobalMethodSecurity(prePostEnabled = true)
+class SecurityConfig(
+    private val credentialsHelper: CredentialsHelper,
+    private val authProvider: BasicAuthProvider,
+    private val tokenService: JWTTokenService,
+    private val filterChainExceptionHandler: ExceptionHandler
+) {
+    @Bean
+    @Order(1)
+    @Throws(Exception::class)
+    fun filterBasicAuthChain(http: HttpSecurity): SecurityFilterChain {
+        http.csrf { csrf ->
+            csrf.disable()
+                .sessionManagement { session ->
+                    session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                }
+                .securityMatcher("/remote/**").httpBasic {}
+                .authorizeHttpRequests { http ->
+                    http.anyRequest().hasAuthority("remote")
+                }
+        }
+
+        return http.build()
+    }
+}
+\end{JavaCode}
+
+Hibernate 6 folgt den Konventionen und vollzieht den Umstieg vom Paket \texttt{javax.*} auf \texttt{jakarta.*}. Der Datenbankdialekt muss nun auch nicht mehr manuell in der Konfiguration von Spring angegeben werden, da er mittlerweile automatisch ermittelt wird. Hibernates interne Typen haben sich auch teilweise geändert. So können von nun an Objekte des Typs \texttt{OffsetDateTime} nicht mehr als Objekte des Typs \texttt{Instant} behandelt werden.~\autoref{lst:hibernate_6_upgrade} zeigt die Teile der Hibernate Konfiguration, die nötig waren, um Konzepte von Hibernate 5 weiterhin verwenden zu können. So war zum Beispiel \texttt{auto\_quote\_keyword} notwendig, um eine potenzielle Überschneidung von Schlüsselworten zu vermeiden.
+
+\begin{JavaCode}[numbers=none, caption={Neu hinzu gekommene Hibernate Konfiguration für die Aktualisierung auf Version 6}, label={lst:hibernate_6_upgrade}]
+spring
+  jpa:
+    properties:
+    hibernate:
+      id:
+        new_generator_mappings: false
+        db_structure_naming_strategy: single
+      timezone:
+        default_storage: NORMALIZE
+      hbm2ddl:
+        auto: none
+      globally_quoted_identifiers_skip_column_definitions: true
+      auto_quote_keyword: true
+\end{JavaCode}
+
+\subsection{Springdoc}
+
+Die Spring-Boot-Applikation funktioniert nun fast vollständig. Es fehlt jedoch noch der Umstieg von Springfox auf Springdoc, da Springfox die aktive Weiterentwicklung eingestellt hat und Spring Boot 3 nicht unterstützt. Im Vergleich zu Springfox, geschieht der Großteil der Konfiguration in den \texttt{yaml}-Dateien von Spring.~\autoref{lst:config_springdoc} zeigt die Konfiguration von Springdoc.
+
+\begin{JavaCode}[numbers=none, caption={Konfiguration von Springdoc}, label={lst:config_springdoc}]
+  springdoc:
+    swagger-ui:
+      try-it-out-enabled: true
+      disable-swagger-default-url: true
+      path: /swagger-ui -> /api/v1/swagger-ui/index.html
+
+    api-docs:
+      path: /v2/api-docs
+\end{JavaCode}
+
+Springdoc verwendet Annotationen zum Ermitteln der Api-Spezifikation. Diese Annotationen müssen nun von Swagger2.0 auf OpenAPI aktualisiert werden. Die meisten Annotationen haben ein direktes Gegenstück. \texttt{@Api} wird zum Beispiel zu \texttt{@Tag}, \texttt{@ApiOperation} wird zu \texttt{@Operation} und \texttt{@ApiImplicitParams} wird zu \texttt{@Parameters}. Da die generierten Controller diese Annotationen enthalten, müssen in den \texttt{mustache}-Vorlagen die alten Annotationen durch die Neuen ersetzt werden. In den meisten Fällen beschränkt sich dieser Prozess auf ein Suchen-und-Ersetzen.
+
+\section{Angular}
+
+Der Aufwand für die Aktualisierung von Angular soll sich in Grenzen halten. Daher werden nur oberflächliche Änderungen vorgenommen. In einem ersten Gedanken sollte die Angular-Applikation auf Version 16 aktualisiert werden. Mit Version 15 von Angular kommen jedoch großflächige Änderungen bei den Angular Material Components hinzu. Daher beschränkt sich die Aktualisierung auf Version 14, da es sich dabei um eine LTS-Version handelt, die bis 18.11.2023 gewartet wird.
+
+Zum Aktualisieren von Angular-Applikationen bietet Google~\textcite{angularupgradeguide} an. Auf Basis der angegebenen Versionen erzeugt dieses Werkzeug eine detailierte Anleitung, welche Komponenten in welcher Reihenfolge wie aktualisiert werden müssen. Dieser Prozess erfolgt inkrementell. Ein direkter Wechsel von Version 10 auf Version 14 ist nicht möglich, da auf alle Major-Versionen zwischen Ausgangs- und Zielversion aktualisiert werden muss. Angular folgt dem Standard \textit{Semantic Versioning}. Der Befehl\texttt{ng update @angular/core@11} ändert zum Beispiel die Version von \texttt{@angular/core} auf 11 und wendet automatische Migrationen an. Diese Migrationen verwenden Schematics zum Ersetzten von Code~\parencite{angularschematics}.
+
+\section{Tests}
+
+Das Testen der Umgebungsvariablen ist mit Windows aufwendig. Glücklicherweise ermöglicht Intellij IDEA das Einfügen von Umgebungsvariablen in eine Konfiguration. In der Build-Konfiguration können im Format \texttt{VAR1=KEY1; VAR2=KEY2} beliebig viele Umgebungsvariablen angegeben werden, die beim Ausführen der Build-Konfiguration anschließend verfügbar sind.
+
+Mit einem migrierten Front- und Backend sind nun die Migrationen zu testen. Im Backend existieren bereits einige Unit-Tests, die eine H2-Instanz verwenden. Testdaten erhält die MySql Datenbank durch Liquibase-Migrationen. Der Liquibase-Container hat Zugriff auf das \texttt{init}-Verzeichnis im Projekt. Alle darin enthaltene Dateien müssen mit den beiden Zeilen, die in~\autoref{lst:liquibase_file_top} zu sehen sind, beginnen~\parencite{liquibasesqlformat}. Liquibase teilt Migrationen in \textit{Changelogs} ein, die wiederum aus mehreren \textit{Changesets} bestehen ~\parencite{liquibasechangelog}. Jedes \textit{Changeset} des Testdaten-\textit{Changelogs} betrifft eine Tabelle.
+
+\begin{JavaCode}[numbers=none, caption={Die ersten beiden Zeilen jeder \texttt{sql}-Datei im \texttt{init}-Verzeichnis}, label={lst:liquibase_file_top}]
+--liquibase formatted sql
+--changeset lhofwimmer:1
+\end{JavaCode}
+
+Neben Unit-Tests wurde die Funktionalität auch in Kombination mit dem Frontend in Form eines Integration-Tests gezeigt. Das hat den Vorteil, dass nicht nur beide Teile der Applikation getestet werden, sondern zusätzlich auch Fehler bei der Aufbereitung der Daten direkt erkannt werden können.
+
+Mit einem funktionierenden Customerportal, das Spring Boot 3 verwendet und keine sensiblen Daten mehr enthält, kann nun zum Schluss übergegangen werden. Darin wird das Praktikum nochmal zusammengefasst, weitere Schritte überlegt und persönliche Erfahrungen offenbart.

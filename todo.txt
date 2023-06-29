@@ -1,0 +1,27 @@
+ansprechpartner neben andreas: Johannes Krenn
+alles erlaubt
+
+- dependencies n shit
+- tests
+- generally einlesen
+
+done:
+- structurizr diagram: https://confluence.cloudflight.io/display/CS/Customer+Portal+2020
+		       https://structurizr.internal.cloudflight.io/workspace/46539
+
+
+
+5. customerportal naming kann grundsätzlich komplett geändert werden, wenn sinnhaftig
+
+
+
+todo: 
+- angular upgrade to 16 und dokumentieren, was breaking changes sind. mit screenshots und so. dementsprechend tickets dafür aufmachen
+- structurizr how to automatic documenten
+
+angular whats wrong:
+- /automate: delete an item. list becomes empty
+- select a template without any actions. add an action. Choose 'openApp' and press Next. The first page will behav as if an error happened.
+
+
+spring.mvc.pathmatch.matching-strategy hat sich mit spring boot 3 verändert

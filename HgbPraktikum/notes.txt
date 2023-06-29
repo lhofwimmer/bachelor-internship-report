@@ -1,0 +1,207 @@
+1. Aufgabe: mathe2go refactoring
+2. Aufgabe: spring boot 2 -> 3
+3. Aufgabe: Structurizr - C4 Modell
+
+
+Praktikumsbericht
+
+Zusammenfassung
+Inhaltsverzeichnis:
+
+Einleitung
+      Bissl über das Unternehmen schreiben
+      Überblick und Zielsetzung beschreiben und wie man die Arbeit so strukturiert
+Konzept und Design
+      Was wir hier so umgesetzt -> auch bissl den Context erklären
+Implementierung und Testen
+      Bissl die Komponenten der Architektur beschreiben oder Einzelteile vom System
+      Bissl Technologien erklären
+Zusammenfassung
+      Wie wurde das Projekt abgewickelt
+      Dann noch den persönlichen Aspekt mit rein nehmen -> wies im Praktikum so war und was du so gelernt hast
+Quellen
+
+
+
+notes:
+
+- Implementierung schicken - github
+
+bp:
+- kann man von struktur her so lassen
+- mathe2go und structurizr kurz erwähnen in einleitung
+- ins detail gehen is wichtig
+
+bachelorprüfung:
+- fokus auf 2. semester compilerbau (hr. pichler bzgl foliensatz fragen)
+- attributierte grammatik -> fokus
+- frontend
+- backend
+- 15 minuten unterhaltung über das thema
+
+- Kurzfassung
+- Abstract
+- Inhaltsverzeichnis
+- Einleitung:
+      - Über Unternehmen schreiben - Cloudflight
+      - Überblick und Zielsetzung - Migration von Spring Boot 2 -> 3, Angular 10 -> 14?
+      - Struktur der Arbeit
+- Konzept / Design
+      - Kontext von Projekt - Wieso Spring Boot 3 Update, Kotlin, Bibliotheken?, Angular Upgrade, mogree codegen, Kollegen erwähnen
+      - Struktur/Architektur - Die Projekt Architektur mit den internen Bibliotheken - Ablauf
+- Implementierung
+      - Komponenten und Einzelteile vom System beschreiben - customerportal
+      - Probleme bei der Migration erläutern
+      - Technologie erklären - Kotlin, Spring Boot, Bibliotheken vllt
+      - Tests
+      - Erklären wie Resultate funktionieren - Via UI und Unit Tests
+- Zusammenfassung
+      - Wie wurde Projekt abgewickelt
+      - Weitere Schritte - nach migration was man machen kann
+      - persönliche Erfahrungen
+Quellen
+
+-------------------------------------------------------------------------------------------------
+
+--- Start:
+
+Sehr geehrter Herr Professor Dobler,
+
+ 
+
+Da die erste Woche meines Berufspraktikums bei Cloudflight nun geschafft ist, möchte ich, wie von Ihnen gewünscht, kurz davon berichten.
+
+ 
+
+Ich bin insgesamt sehr gut angekommen. Die Firma ist sehr darauf bedacht, dass ein beidseitiger Lern- und Wirtschaftserfolg gewährleistet ist, was ich sehr schätze. Ich konnte bereits ab Dienstag produktiv an einem Projekt teilnehmen. Dabei handelt es sich um die Android-App "mathe2go", die von mogree (welche letztes Jahr von Cloudflight akquiriert wurde) für das BFI als Lern-App für die Zentralmatura entwickelt wurde. Konkret kümmere ich mich um die Wartung dieser App, um eine Neuveröffentlichung im App-Store zu ermöglichen.
+
+ 
+
+Dies ist ein recht kleines Projekt, welches primär zur Einführung in die Firma für mich gewählt wurde. Daher werde ich in den kommenden Tagen vermutlich damit fertig. Der weitere Verlauf, beziehungsweise in welches Projekt-Team ich nach Fertigstellung von "mathe2go" komme, ist noch unklar. Ich habe jedoch den Wunsch geäußert, den Frontend- und Backend-Entwicklungsprozess kennenlerenen zu wollen.
+
+ 
+
+Mit freundlichen Grüßen,
+
+Lukas Hofwimmer
+
+--- Woche 2-3:
+
+Sehr geehrter Herr Professor Dobler, 
+
+  
+
+Hier mein Bericht zu den letzten beiden Wochen meines Berufspraktikums: 
+
+
+
+
+Ich habe mich bis Mittwoch 19.04.2023 noch mit dem BFI mathe2go Projekt befasst. Dabei kam die Anforderung hinzu, ActiveAndroid als Lösung zum lokalen Speichern von Daten mit SQLite durch SQLDelight zu ersetzen. Während `ActiveAndroid` eine klassische ORM vergleichbar mit Hibernate ist, wählt SQLDelight einen anderen Ansatz. Und zwar schreibt der Programmierer im ersten Schritt alle Datenbankabfragen und Tabellen mit SQL-Syntax in eine .sq-Datei, welche anschließend durch ein Gradle-Plugin Modellklassen für die Tabellen und Query-Klassen für Datenbankabfragen erzeugt. Mit diesen generierten Klassen kann der Programmierer nun mit der Datenbank interagieren. 
+
+ 
+
+Um nun sicherzustellen, dass diese tiefgreifenden Änderungen auch funktionieren, implementierte ich anschließend noch Unit- und Instrumentation-Tests, um gewisse Abläufe in der App, die auf die Datenbank zugreifen zu testen. Mit den Unit-Tests wurden explizit alle Methoden, die von SQLDelight generiert wurden, getestet. Für die Instrumentation Test bietet Google die Bibliothek `Espresso` an, um Benutzer-Interaktionen innerhalb der App zu simulieren. Unit Tests sind mit JUnit 4 implementiert. 
+
+ 
+
+Während mathe2go grundsätzlich in Java geschrieben ist (original stammt die App aus 2017, Kotlin wurde erst mit 2019 Standardsprache für Android), sind Tests und Datenbankzugriff in Kotlin implementiert. 
+
+ 
+
+Das Thema Viewbinding is auch ein Thema bei dem sich viel in den letzten Jahren bei Android verändert hat. Bis 2020 war der gängige Weg ‘Butterknife’ zu verwenden. ‘Butterknife’ ist eine Bibliothek, mit welcher Android Views direkt in Variablen innerhalb einer Klasse injeziert werden können. Nun bietet Google aber seit 2020 die Möglichkeit des Viewbinding an. Damit erzeugt der Compiler Klasse anhand der Layout-Dateien, mit welchen auf die Views der Benutzeroberfläche zugegriffen werden kann. Um dieses Ersetzen von ButterKnife durch Viewbindings kümmerte ich mich. 
+
+ 
+
+Abschließend beschäftigte ich mich noch kurz mit Jenkins, unserem Build-Server, der für das Erstellen von Android App Bundle und Android Package Dateien zuständig ist. Hierbei ging es um kleine Konfigurationsänderungen, um auf ein neues Dateiformat für Apps (.apk -> .aab) umsteigen zu können. 
+
+ 
+
+Nachdem ich nun mit mathe2go fertig war, wurde ich einem neuen Projekt zugeteilt, in dem ich nun mit Spring Boot (Kotlin) und Angular beschäftige. Dabei handelt es sich um ein Kundenportal, welches zum verwalten von Push-Benachrichtigungskampagnen verwendet wird. In diesem Portal haben Kunden die Möglichkeit, neue Benachrichtigungen an iOS und Android Endgeräte zu senden oder auch zum Beispiel die Zielgruppe einzuschränken. Als Einleitung in das Projekt werde ich erstmal die Projektabhängigkeiten auf den neuesten Stand bringen und im Zuge dessen mich mit der Codebase vertraut machen. 
+
+ 
+
+Bis in 2 Wochen bei meinem nächsten Bericht und mit freundlichen Grüßen, 
+
+
+Lukas Hofwimmer 
+
+
+--- Woche 4-5:
+
+Sehr geehrter Herr Professor Dobler,
+
+ 
+
+hier mein Berufspraktikumsbericht zu Woche 4 und 5:
+
+ 
+
+Wie im letzten Bericht angekündigt, bin ich nun einem neuen Projekt zugeteilt worden, nachdem ich mathe2go fertigstellen konnte.
+
+Dabei handelt es sich um 'customerportal', eine Applikation zum verwalten und senden von Push-Benachrichtigung an mobile Endgeräte und Google Chrome.
+
+Hierbei können Filter zum spezifizieren der Zielgruppe eingesetzt werden und Benachrichtigungen individuell gestaltet werden (z.B.: Benachrichtigung enthält Name des Empfängers, etc.). Die Applikation besteht aus einer Spring Boot Api und einer Angular Weboberfläche, wobei die Api eine wesentlich höhere Priorität hat, da ein großteil der Kunden nur durch diese Api auf 'customerportal' zugreifen und die Angular-Applikation vollständig umgehen.
+
+ 
+
+Original wurde 'customerportal' 2020 entwickelt, seither aber nicht am aktuellsten Stand gehalten, mit der Folge, dass extrem gefährliche Sicherheitslücken, wie log4shell möglich waren. Dementsprechend bestand meine erste Aufgabe darin, Spring Boot von Version 2.3.2 auf 3.0.6 zu bringen. Dabei stieß ich auch schon auf erste Hürden. Da die Api mapstruct verwendet und daher kapt (Annotationsprozessor für Kotlin) benötigt, kapt jedoch nur bis Java 15 unterstützt wird (da kapt bald deprecated und durch ksp ersetzt werden soll), Spring Boot jedoch mindestens Java 17 benötigt, war der Umstieg von Spring Boot 2 -> 3 erstmal nicht möglich. Daher entschied ich mich, erstmal nur auf Spring Boot 2.7.11 zu aktualisieren, da von Spring sowieso empfohlen wird, vorher auf diese Version als Zwischenschritt zu aktualisieren.
+
+ 
+
+Das spannende an der Spring Boot Applikation ist die Art und Weise, mit welcher die REST-Controller generiert werden. Im ersten Schritt erzeugt der Code-Generator eine Delegate Schnittstelle anhand der Definition in einer swagger.yaml Datei. Anschließend implementiert der Entwickler Services, die von diesen Delegates erben. Services enthalten jegliche Logik, die spezifisch für diesen Anwendungsfall sind, Objekttransformationen auf Dtos zum Beispiel aber nicht. Dieser Delegate wird nun im ebenso autogenerierten Controller aufgerufen. Aufgrund der ausgezeichneten Dependency-Injection Mechanismen von Spring Boot wird im Controller dann automatisch die Service Implementierung des Delegates verwendet. Um diesen Verhalten besser darzustellen, finden Sie im Anhang ein grobes Diagramm.
+
+ 
+
+Auf Angular Seite hatte ich den selben Plan, von Version 10 auf 16 zu aktualisieren. Hier war jedoch das Problem, dass mit Version 15 große Teile der Material UI Komponenten neu konzipiert wurden und dadurch ein großer Programmieraufwand entstehen würde, wenn man das vorherige Aussehen der Benutzeroberfläche reproduzieren will. Da die Web-UI aber nur nebensächliche Relevanz hat, entschied ich mich dazu, erstmal bei Version 14 zu verharren, um den Aufwand in einem gerechtfertigten Rahmen zu halten.
+
+ 
+
+Bis in 2 Wochen und mit freundlichen Grüßen,
+
+ 
+
+Lukas Hofwimmer
+
+--- Woche 6-7
+
+Sehr geehrter Herr Professor Dobler,
+
+ 
+
+hier mein Tätigkeitsbericht zu den letzten beiden Wochen meines Berufspraktikums:
+
+ 
+
+Im Vergleich zu meinem letzten Bericht, wird dieser etwas kürzer sein, da ich mir vorletzte Woche drei Urlaubstage und letzte Woche den Freitag als Zwickeltag ebenfalls als Urlaub genommen habe. Dementsprechend umfasst dieser Bericht 5 Arbeitstage. In diesem Zeitraum war ich weiterhin mit dem Umstieg von Spring Boot 2 -> 3 beschäftigt, konnte jedoch einige große Punkte abschließen, allen voran die von kapt verursachten Probleme.
+
+ 
+
+Diese Probleme hatten zwei Ursprünge: Unser interne Bibliothek mogree-codegen zum Generieren der Rest Controller und mapstruct zum Generieren der Dtos. Nachdem ich bei mogree-codegen die Abhängigkeiten aktualisiert habe, behob ich noch einige Kleinigkeiten, die 2020 im Pfusch entstanden sind (z.B. waren noch einige Pfade hard-coded, weswegen eine Änderung des Zielpfads zu Problemen führte.) und ergänzte Teile der Dokumentation für die zukünftige Weiterentwicklung (auch wenn diese Bibliothek potenziell in zukünftigen Projekten nicht mehr eingesetzt wird).
+
+ 
+
+Abgesehen davon beschäftigte ich mich generell mit dem aktualisieren von veralteten Code-Fragmenten, die durch den Umstieg auf Spring Boot 3 aktualisiert gehörten. Darunter fiel unter anderem der Umstieg von Hibernate 5 -> 6 und Spring Security 5 -> 6. Als voraussichtlich letzte Aufgabe, die noch nicht abgeschlossen ist, beschäftige ich mich gerade noch damit, dass ich die autogenerierte REST Api-Dokumentation unter Spring Boot 3 funktionsfähig bekomme. Die Bibliothek springfox, die wir bisher für diesen Zweck verwendeten, wird leider nicht mehr unterstütz, weshalb ich nun gerade am Umstieg auf springdoc-openapi arbeite.
+
+ 
+
+Bis in zwei Wochen bei meinem nächsten Bericht und mit freundlichen Grüßen,
+
+ 
+
+Lukas Hofwimmer
+
+--- Woche 8-9
+
+Sehr geehrter Herr Professor Dobler,
+
+hier mein Tätigkeitsbericht zu den letzten beiden Wochen meines Berufspraktikums:
+
+Ich konnte in diesen beiden Wochen die Migration auf Spring Boot 3 größtenteils abschließen, nachdem ich die Migration von springfox auf springdoc fertigstellen konnte. Hierfür waren in zwei Gebieten größere Änderungen vorzunehmen. In einem ersten Schritt musste ich die Template Dateien, anhand welcher die Controller generiert werden, umändern, sodass von nun an nicht mehr Swagger 2 Annotation, sondern OpenApi Annotationen für die Controller generiert werden. Diese Annotation sind insofern wichtig, da durch diese die Api-Spezifikation und in Folge dessen die Swagger UI Oberfläche generiert wird. Dies nahm mehr Zeit in Anspruch, als zu Beginn angenommen, da Teile des Systems, zum Beispiel das Konzept hinsichtlich dem Zugriff auf abgesicherte Komponenten der Api, schwieriger zu migrieren waren.
+
+Abgesehen davon konnte ich mit meinem Wissen zu einer sogenannten "Communities of Practice" beitragen. Dabei handelt es sich um den Versuch, eine standardisierte Wissenbasis in der Firma zu etablieren. CoPs sind grob in gewisse Bereiche unterteilt. So gibt es ein CoP für Frontend, JVM Technologien, C#, etc. Konkret treffen sich Experten zu einem Themenbereich, sammeln Fragen (z.B.: welche Bibliothek soll bei Android für Api-Anfragen verwendet werden?) und erarbeiten anhand dieser dann Standards, die in CoPs zusammengefasst sind. In diesen Meetings konnte ich meine Perspektive einbringen und anschließend noch zum Thema Structurizr und C4 Modell eine Anleitung beitragen.
+
+Mit dem nun laufenden Spring Boot 3 Backend geht es ans Testen. Dies bewerkstelligte ich mithilfe des Angular Frontends. Das hat den Vorteil, dass man leicht und schnell sieht, welche Abfragen nicht richtig funktionieren und wo dementsprechend Fehler behoben werden müssen. Ebenso bietet es auch die Möglichkeit, etwaige Fehler, die mit dem Umstieg auf Angular 14 möglicherweise entstanden sind zu erkennen und beheben. Dabei konnte ich schon erste Probleme beheben, bin aber noch nicht fertig damit.
+
+Bis in zwei Wochen bei meinem vorletzten Bericht und mit freundlichen Grüßen,
+
+Lukas Hofwimmer
